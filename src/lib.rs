@@ -20,14 +20,14 @@ use std::str;
 use std::str::FromStr;
 
 #[derive(Debug)]
-struct Language {
-    name: String,
+struct Language<'a> {
+    name: &'a str,
     quality: f32,
 }
 
-impl Eq for Language {}
+impl Eq for Language<'_> {}
 
-impl Ord for Language {
+impl Ord for Language<'_> {
     fn cmp(&self, other: &Language) -> Ordering {
         if self.quality > other.quality {
             Ordering::Less
@@ -39,22 +39,22 @@ impl Ord for Language {
     }
 }
 
-impl PartialOrd for Language {
+impl PartialOrd for Language<'_> {
     fn partial_cmp(&self, other: &Language) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for Language {
+impl PartialEq for Language<'_> {
     fn eq(&self, other: &Language) -> bool {
         self.quality == other.quality && self.name.to_lowercase() == other.name.to_lowercase()
     }
 }
 
-impl Language {
+impl Language<'_> {
     fn new(tag: &str) -> Language {
         let tag_parts: Vec<&str> = tag.split(';').collect();
-        let name = tag_parts[0].to_string();
+        let name = tag_parts[0];
         let quality = match tag_parts.len() {
             1 => 1.0,
             _ => Language::quality_with_default(tag_parts[1]),
@@ -81,14 +81,13 @@ impl Language {
 ///
 /// let user_languages = parse("en-US, en-GB;q=0.5");
 /// ```
-pub fn parse(raw_languages: &str) -> Vec<String> {
-    let stripped_languages = raw_languages.to_owned().replace(' ', "");
-    let language_strings: Vec<&str> = stripped_languages.split(',').collect();
-    let mut languages: Vec<Language> = language_strings.iter().map(|l| Language::new(l)).collect();
+pub fn parse(raw_languages: &str) -> Vec<&str> {
+    let language_strings = raw_languages.split(',').map(str::trim);
+    let mut languages: Vec<Language> = language_strings.map(|l| Language::new(l)).collect();
     languages.sort();
     languages
         .iter()
-        .map(|l| l.name.to_owned())
+        .map(|l| l.name)
         .filter(|l| !l.is_empty())
         .collect()
 }
@@ -103,16 +102,15 @@ pub fn parse(raw_languages: &str) -> Vec<String> {
 /// use accept_language::parse_with_quality;
 ///
 /// let user_languages = parse_with_quality("en-US, en-GB;q=0.5");
-/// assert_eq!(user_languages,vec![(String::from("en-US"), 1.0), (String::from("en-GB"), 0.5)])
+/// assert_eq!(user_languages,vec![("en-US", 1.0), ("en-GB", 0.5)])
 /// ```
-pub fn parse_with_quality(raw_languages: &str) -> Vec<(String, f32)> {
-    let stripped_languages = raw_languages.to_owned().replace(' ', "");
-    let language_strings: Vec<&str> = stripped_languages.split(',').collect();
-    let mut languages: Vec<Language> = language_strings.iter().map(|l| Language::new(l)).collect();
+pub fn parse_with_quality(raw_languages: &str) -> Vec<(&str, f32)> {
+    let language_strings = raw_languages.split(',').map(str::trim);
+    let mut languages: Vec<Language> = language_strings.map(|l| Language::new(l)).collect();
     languages.sort();
     languages
         .iter()
-        .map(|l| (l.name.to_owned(), l.quality))
+        .map(|l| (l.name, l.quality))
         .filter(|l| !l.0.is_empty())
         .collect()
 }
@@ -127,11 +125,11 @@ pub fn parse_with_quality(raw_languages: &str) -> Vec<(String, f32)> {
 ///
 /// let common_languages = intersection("en-US, en-GB;q=0.5", &["en-US", "de", "en-GB"]);
 /// ```
-pub fn intersection(raw_languages: &str, supported_languages: &[&str]) -> Vec<String> {
+pub fn intersection<'a>(raw_languages: &'a str, supported_languages: &[&str]) -> Vec<&'a str> {
     let user_languages = parse(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.contains(&l.as_str()))
+        .filter(|l| supported_languages.contains(l))
         .collect()
 }
 /// Similar to [`intersection`](intersection) but using binary sort. The supported languages
@@ -145,11 +143,14 @@ pub fn intersection(raw_languages: &str, supported_languages: &[&str]) -> Vec<St
 ///
 /// let common_languages = intersection_ordered("en-US, en-GB;q=0.5", &["de", "en-GB", "en-US"]);
 /// ```
-pub fn intersection_ordered(raw_languages: &str, supported_languages: &[&str]) -> Vec<String> {
+pub fn intersection_ordered<'a>(
+    raw_languages: &'a str,
+    supported_languages: &[&str],
+) -> Vec<&'a str> {
     let user_languages = parse(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.binary_search(&l.as_str()).is_ok())
+        .filter(|l| supported_languages.binary_search(l).is_ok())
         .collect()
 }
 /// Similar to [`intersection`](intersection) but with the quality as `f32` appended for each language.
@@ -163,16 +164,16 @@ pub fn intersection_ordered(raw_languages: &str, supported_languages: &[&str]) -
 /// use accept_language::intersection_with_quality;
 ///
 /// let common_languages = intersection_with_quality("en-US, en-GB;q=0.5", &["en-US", "de", "en-GB"]);
-/// assert_eq!(common_languages,vec![(String::from("en-US"), 1.0), (String::from("en-GB"), 0.5)])
+/// assert_eq!(common_languages,vec![("en-US", 1.0), ("en-GB", 0.5)])
 /// ```
-pub fn intersection_with_quality(
-    raw_languages: &str,
+pub fn intersection_with_quality<'a>(
+    raw_languages: &'a str,
     supported_languages: &[&str],
-) -> Vec<(String, f32)> {
+) -> Vec<(&'a str, f32)> {
     let user_languages = parse_with_quality(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.contains(&l.0.as_str()))
+        .filter(|l| supported_languages.contains(&l.0))
         .collect()
 }
 
@@ -186,16 +187,16 @@ pub fn intersection_with_quality(
 /// use accept_language::intersection_ordered_with_quality;
 ///
 /// let common_languages = intersection_ordered_with_quality("en-US, en-GB;q=0.5", &["de", "en-GB", "en-US"]);
-/// assert_eq!(common_languages,vec![(String::from("en-US"), 1.0), (String::from("en-GB"), 0.5)])
+/// assert_eq!(common_languages,vec![("en-US", 1.0), ("en-GB", 0.5)])
 /// ```
-pub fn intersection_ordered_with_quality(
-    raw_languages: &str,
+pub fn intersection_ordered_with_quality<'a>(
+    raw_languages: &'a str,
     supported_languages: &[&str],
-) -> Vec<(String, f32)> {
+) -> Vec<(&'a str, f32)> {
     let user_languages = parse_with_quality(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.binary_search(&l.0.as_str()).is_ok())
+        .filter(|l| supported_languages.binary_search(&l.0).is_ok())
         .collect()
 }
 
@@ -216,7 +217,7 @@ mod tests {
         assert_eq!(
             language,
             Language {
-                name: String::from("en-US"),
+                name: "en-US",
                 quality: 0.7,
             }
         )
@@ -228,7 +229,7 @@ mod tests {
         assert_eq!(
             language,
             Language {
-                name: String::from("en-US"),
+                name: "en-US",
                 quality: 0.7,
             }
         )
@@ -240,7 +241,7 @@ mod tests {
         assert_eq!(
             language,
             Language {
-                name: String::from("en-US"),
+                name: "en-US",
                 quality: 1.0,
             }
         )
@@ -261,15 +262,7 @@ mod tests {
     #[test]
     fn it_parses_a_valid_accept_language_header() {
         let user_languages = parse(MOCK_ACCEPT_LANGUAGE);
-        assert_eq!(
-            user_languages,
-            vec![
-                String::from("en-US"),
-                String::from("zh-Hant"),
-                String::from("de"),
-                String::from("jp"),
-            ]
-        )
+        assert_eq!(user_languages, vec!["en-US", "zh-Hant", "de", "jp"])
     }
 
     #[test]
@@ -284,70 +277,41 @@ mod tests {
         let user_languages_two = parse(";q");
         let user_languages_three = parse("q-");
         let user_languages_four = parse("en;q=");
-        assert_eq!(user_languages_one, vec![String::from("q")]);
+        assert_eq!(user_languages_one, vec!["q"]);
         assert_eq!(user_languages_two.len(), 0);
-        assert_eq!(user_languages_three, vec![String::from("q-")]);
-        assert_eq!(user_languages_four, vec![String::from("en")])
+        assert_eq!(user_languages_three, vec!["q-"]);
+        assert_eq!(user_languages_four, vec!["en"])
     }
 
     #[test]
     fn it_sorts_languages_by_quality() {
         let user_languages = parse("en-US, de;q=0.1, jp;q=0.7");
-        assert_eq!(
-            user_languages,
-            vec![
-                String::from("en-US"),
-                String::from("jp"),
-                String::from("de"),
-            ]
-        )
+        assert_eq!(user_languages, vec!["en-US", "jp", "de"])
     }
 
     #[test]
     fn it_returns_language_intersection() {
         let common_languages = intersection(MOCK_ACCEPT_LANGUAGE, AVIALABLE_LANGUAGES);
-        assert_eq!(
-            common_languages,
-            vec![
-                String::from("en-US"),
-                String::from("zh-Hant"),
-                String::from("de"),
-                String::from("jp")
-            ]
-        )
+        assert_eq!(common_languages, vec!["en-US", "zh-Hant", "de", "jp"])
     }
 
     #[test]
     fn it_returns_language_intersection_ordered() {
         let common_languages = intersection_ordered(MOCK_ACCEPT_LANGUAGE, AVIALABLE_LANGUAGES);
-        assert_eq!(
-            common_languages,
-            vec![
-                String::from("en-US"),
-                String::from("zh-Hant"),
-                String::from("de"),
-                String::from("jp")
-            ]
-        )
+        assert_eq!(common_languages, vec!["en-US", "zh-Hant", "de", "jp"])
     }
 
     #[test]
     fn it_returns_language_intersection_with_quality() {
         let common_languages = intersection_with_quality(MOCK_ACCEPT_LANGUAGE, &["en-US", "jp"]);
-        assert_eq!(
-            common_languages,
-            vec![(String::from("en-US"), 1.0), (String::from("jp"), 0.1)]
-        )
+        assert_eq!(common_languages, vec![("en-US", 1.0), ("jp", 0.1)])
     }
 
     #[test]
     fn it_returns_language_intersection_ordered_with_quality() {
         let common_languages =
             intersection_ordered_with_quality(MOCK_ACCEPT_LANGUAGE, &["en-US", "jp"]);
-        assert_eq!(
-            common_languages,
-            vec![(String::from("en-US"), 1.0), (String::from("jp"), 0.1)]
-        )
+        assert_eq!(common_languages, vec![("en-US", 1.0), ("jp", 0.1)])
     }
 
     #[test]
