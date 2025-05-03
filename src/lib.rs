@@ -19,6 +19,8 @@ use std::cmp::Ordering;
 use std::str;
 use std::str::FromStr;
 
+use unicase::UniCase;
+
 #[derive(Debug)]
 struct Language<'a> {
     name: &'a str,
@@ -47,7 +49,7 @@ impl PartialOrd for Language<'_> {
 
 impl PartialEq for Language<'_> {
     fn eq(&self, other: &Language) -> bool {
-        self.quality == other.quality && self.name.to_lowercase() == other.name.to_lowercase()
+        self.quality == other.quality && self.name.eq_ignore_ascii_case(other.name)
     }
 }
 
@@ -125,11 +127,16 @@ pub fn parse_with_quality(raw_languages: &str) -> Vec<(&str, f32)> {
 ///
 /// let common_languages = intersection("en-US, en-GB;q=0.5", &["en-US", "de", "en-GB"]);
 /// ```
-pub fn intersection<'a>(raw_languages: &'a str, supported_languages: &[&str]) -> Vec<&'a str> {
+pub fn intersection<'a>(raw_languages: &str, supported_languages: &[&'a str]) -> Vec<&'a str> {
     let user_languages = parse(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.contains(l))
+        .filter_map(|l| {
+            supported_languages
+                .iter()
+                .find(|s| s.eq_ignore_ascii_case(l))
+                .copied()
+        })
         .collect()
 }
 /// Similar to [`intersection`](intersection) but using binary sort. The supported languages
@@ -144,13 +151,22 @@ pub fn intersection<'a>(raw_languages: &'a str, supported_languages: &[&str]) ->
 /// let common_languages = intersection_ordered("en-US, en-GB;q=0.5", &["de", "en-GB", "en-US"]);
 /// ```
 pub fn intersection_ordered<'a>(
-    raw_languages: &'a str,
-    supported_languages: &[&str],
+    raw_languages: &str,
+    supported_languages: &[&'a str],
 ) -> Vec<&'a str> {
     let user_languages = parse(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.binary_search(l).is_ok())
+        .filter_map(|l| {
+            let l = UniCase::unicode(l);
+            let idx = supported_languages
+                .binary_search_by(|val| {
+                    let val = UniCase::unicode(*val);
+                    val.cmp(&l)
+                })
+                .ok()?;
+            Some(supported_languages[idx])
+        })
         .collect()
 }
 /// Similar to [`intersection`](intersection) but with the quality as `f32` appended for each language.
@@ -167,13 +183,21 @@ pub fn intersection_ordered<'a>(
 /// assert_eq!(common_languages,vec![("en-US", 1.0), ("en-GB", 0.5)])
 /// ```
 pub fn intersection_with_quality<'a>(
-    raw_languages: &'a str,
-    supported_languages: &[&str],
+    raw_languages: &str,
+    supported_languages: &[&'a str],
 ) -> Vec<(&'a str, f32)> {
     let user_languages = parse_with_quality(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.contains(&l.0))
+        .filter_map(|l| {
+            Some((
+                supported_languages
+                    .iter()
+                    .find(|s| s.eq_ignore_ascii_case(l.0))
+                    .copied()?,
+                l.1,
+            ))
+        })
         .collect()
 }
 
@@ -190,13 +214,23 @@ pub fn intersection_with_quality<'a>(
 /// assert_eq!(common_languages,vec![("en-US", 1.0), ("en-GB", 0.5)])
 /// ```
 pub fn intersection_ordered_with_quality<'a>(
-    raw_languages: &'a str,
-    supported_languages: &[&str],
+    raw_languages: &str,
+    supported_languages: &[&'a str],
 ) -> Vec<(&'a str, f32)> {
     let user_languages = parse_with_quality(raw_languages);
     user_languages
         .into_iter()
-        .filter(|l| supported_languages.binary_search(&l.0).is_ok())
+        .filter_map(|l| {
+            let q = l.1;
+            let l = UniCase::unicode(l.0);
+            let idx = supported_languages
+                .binary_search_by(|val| {
+                    let val = UniCase::unicode(*val);
+                    val.cmp(&l)
+                })
+                .ok()?;
+            Some((supported_languages[idx], q))
+        })
         .collect()
 }
 
@@ -296,8 +330,22 @@ mod tests {
     }
 
     #[test]
+    fn it_returns_language_intersection_case_insensitive() {
+        let common_languages =
+            intersection(&MOCK_ACCEPT_LANGUAGE.to_uppercase(), AVIALABLE_LANGUAGES);
+        assert_eq!(common_languages, vec!["en-US", "zh-Hant", "de", "jp"])
+    }
+
+    #[test]
     fn it_returns_language_intersection_ordered() {
         let common_languages = intersection_ordered(MOCK_ACCEPT_LANGUAGE, AVIALABLE_LANGUAGES);
+        assert_eq!(common_languages, vec!["en-US", "zh-Hant", "de", "jp"])
+    }
+
+    #[test]
+    fn it_returns_language_intersection_ordered_case_insensitive() {
+        let common_languages =
+            intersection_ordered(&MOCK_ACCEPT_LANGUAGE.to_uppercase(), AVIALABLE_LANGUAGES);
         assert_eq!(common_languages, vec!["en-US", "zh-Hant", "de", "jp"])
     }
 
@@ -308,9 +356,25 @@ mod tests {
     }
 
     #[test]
+    fn it_returns_language_intersection_with_quality_case_insensitive() {
+        let common_languages =
+            intersection_with_quality(&MOCK_ACCEPT_LANGUAGE.to_uppercase(), &["en-US", "jp"]);
+        assert_eq!(common_languages, vec![("en-US", 1.0), ("jp", 0.1)])
+    }
+
+    #[test]
     fn it_returns_language_intersection_ordered_with_quality() {
         let common_languages =
             intersection_ordered_with_quality(MOCK_ACCEPT_LANGUAGE, &["en-US", "jp"]);
+        assert_eq!(common_languages, vec![("en-US", 1.0), ("jp", 0.1)])
+    }
+
+    #[test]
+    fn it_returns_language_intersection_ordered_with_quality_case_insensitive() {
+        let common_languages = intersection_ordered_with_quality(
+            &MOCK_ACCEPT_LANGUAGE.to_uppercase(),
+            &["en-US", "jp"],
+        );
         assert_eq!(common_languages, vec![("en-US", 1.0), ("jp", 0.1)])
     }
 

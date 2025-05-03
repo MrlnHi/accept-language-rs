@@ -12,3 +12,4 @@ authors = ["Mike Engel <mike@mike-engel.com>", "Sean Stangl"]
 edition = "2018"
 
 [dependencies]
+unicase = "2.8.1"
